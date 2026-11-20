@@ -1,0 +1,6 @@
+{
+  "identifier": "viewer",
+  "description": "Open the project picker and public web links from the catalogue.",
+  "windows": ["main"],
+  "permissions": ["core:default", "opener:allow-open-url", "opener:allow-default-urls"]
+}

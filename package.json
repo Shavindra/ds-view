@@ -1,0 +1,31 @@
+{
+  "name": "ds-view",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 1420 --strictPort",
+    "build": "tsc --noEmit && vite build",
+    "desktop": "tauri dev",
+    "package": "tauri build",
+    "test:ui": "playwright test"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.0",
+    "@fontsource/ibm-plex-sans": "^5.2.0",
+    "@fontsource/source-serif-4": "^5.2.0",
+    "@tauri-apps/api": "^2.9.0",
+    "@tauri-apps/plugin-opener": "^2.7.3",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@tauri-apps/cli": "^2.9.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.1.0",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.0"
+  }
+}

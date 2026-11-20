@@ -1,0 +1,29 @@
+catalogue:
+  project:
+    pid: urn:example:catalogue
+    title: Survey catalogue
+  publications:
+    - pid: urn:example:paper
+      title: Shoreline survey
+      description: Measurements at two field stations.
+      local_folder: paper
+      dataset_links:
+        - {dataset: 'urn:example:readings', role: describes}
+        - {dataset: 'urn:example:means', role: reuses}
+    - pid: urn:example:comparison
+      title: Second survey
+      dataset_links:
+        - {dataset: 'urn:example:readings', role: reuses}
+  datasets:
+    - pid: urn:example:readings
+      title: Station readings
+      local_folder: paper/raw
+      file_groups:
+        - {label: Measurements, paths: [readings.csv]}
+    - pid: urn:example:means
+      title: Station means
+      local_folder: paper/processed
+      file_groups:
+        - {label: Summary, paths: [means.csv]}
+  reviews:
+    - {publication: 'urn:example:paper', status: useful, notes: Compare the two stations.}
