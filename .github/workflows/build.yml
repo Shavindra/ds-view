@@ -1,0 +1,63 @@
+name: Build desktop apps
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'reader/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'package*.json'
+      - '*.config.ts'
+      - 'index.html'
+      - 'tsconfig.json'
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            label: macOS Apple Silicon
+            artifact: DS-View-macOS-arm64
+            bundle: dmg
+            engine: webkit
+          - os: windows-2022
+            label: Windows x64
+            artifact: DS-View-Windows-x64
+            bundle: nsis
+            engine: chromium
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: python scripts/build_reader.py
+      - run: python -m unittest discover -s tests -p test_reader.py
+      - run: npx playwright install ${{ matrix.engine }}
+      - run: npm run test:ui -- --project ${{ matrix.engine }}
+      - run: npm run package -- --bundles ${{ matrix.bundle }}
+      - run: python scripts/check_bundle.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          if-no-files-found: error
+          path: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/nsis/*-setup.exe
