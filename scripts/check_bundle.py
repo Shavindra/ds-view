@@ -3,6 +3,7 @@
 import json
 import os
 import plistlib
+import signal
 import subprocess
 import sys
 import tempfile
@@ -11,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
-from test_reader import check_store
+from test_reader import check_store, installed_environment
 
 
 def smoke(install, tmp):
@@ -32,7 +33,8 @@ def smoke(install, tmp):
     trace = tmp / "desktop-git-trace.jsonl"
     proc = subprocess.Popen(
         [str(app), str(tmp / "data set å")],
-        env={**os.environ, "GIT_TRACE2_EVENT": str(trace)},
+        env={**installed_environment(), "GIT_TRACE2_EVENT": str(trace)},
+        start_new_session=not win,
     )
     try:
         deadline = time.monotonic() + 60
@@ -62,10 +64,33 @@ def smoke(install, tmp):
             )
     finally:
         if win:
-            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], check=False)
+            close = [
+                "powershell",
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                f"(Get-Process -Id {proc.pid}).CloseMainWindow()",
+            ]
         else:
-            proc.terminate()
-        proc.wait(timeout=20)
+            close = [
+                "/usr/bin/osascript",
+                "-l",
+                "JavaScript",
+                "-e",
+                f"ObjC.import('AppKit'); $.NSRunningApplication.runningApplicationWithProcessIdentifier({proc.pid}).terminate",
+            ]
+        if proc.poll() is None:
+            subprocess.run(close, check=False, timeout=15)
+        try:
+            proc.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            if win:
+                subprocess.run(
+                    ["taskkill", "/T", "/F", "/PID", str(proc.pid)], check=False
+                )
+            else:
+                os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait(timeout=15)
 
 
 def main():

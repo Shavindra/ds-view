@@ -57,6 +57,21 @@ def as_yaml(value):
     return yaml.safe_dump(value, allow_unicode=True, sort_keys=False)
 
 
+def preview_path(path):
+    if not path.is_symlink():
+        return path if path.is_file() else None
+    try:
+        target = path.resolve(strict=True)
+    except OSError:
+        return None
+    # A locked annex file points into its own repository's local object store.
+    if target.is_file() and any(
+        target.is_relative_to(parent / ".git/annex/objects") for parent in path.parents
+    ):
+        return target
+    return None
+
+
 class Project:
     def __init__(self, path):
         self.root = Path(path).resolve(strict=True)
@@ -200,16 +215,17 @@ class Project:
         if name not in rows:
             raise ValueError("This file is outside the selected record.")
         path = scoped_path(item.folder, name)
+        local = (
+            preview_path(path) if rows[name]["Availability"] == "Available" else None
+        )
         result = {
             "metadata": self.stored_files.get(path, []),
             "preview": None,
             "truncated": False,
-            "canPreview": rows[name]["Availability"] == "Available"
-            and not path.is_symlink()
-            and path.is_file(),
+            "canPreview": local is not None,
         }
-        if preview and result["canPreview"]:
-            with path.open("rb") as stream:
+        if preview and local is not None:
+            with local.open("rb") as stream:
                 data = stream.read(8193)
             try:
                 from codecs import getincrementaldecoder

@@ -42,7 +42,8 @@
       "../LICENSE": "licenses/DS-View.txt",
       "../node_modules/@fontsource/ibm-plex-mono/LICENSE": "licenses/ibm-plex-mono.txt",
       "../node_modules/@fontsource/ibm-plex-sans/LICENSE": "licenses/ibm-plex-sans.txt",
-      "../node_modules/@fontsource/source-serif-4/LICENSE": "licenses/source-serif-4.txt"
+      "../node_modules/@fontsource/source-serif-4/LICENSE": "licenses/source-serif-4.txt",
+      "../licenses/git-COPYING.txt": "licenses/git-COPYING.txt"
     }
   }
 }

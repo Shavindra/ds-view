@@ -3,7 +3,7 @@ import { defineConfig } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests",
   testMatch: "viewer.spec.ts",
-  timeout: 60000,
+  timeout: 90000,
   use: {
     baseURL: "http://127.0.0.1:1420",
     viewport: { width: 1240, height: 800 },

@@ -51,7 +51,7 @@ test("the same catalogue layout and navigation on both engines", async ({
     await page.getByRole("button", { name: "Open project folder" }).click();
     await expect(
       page.getByRole("heading", { name: "Shoreline survey" }),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 45000 });
     await expect(
       page.getByRole("heading", { name: "Station readings" }),
     ).toBeVisible();

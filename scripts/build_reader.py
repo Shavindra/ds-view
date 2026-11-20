@@ -11,6 +11,39 @@ ROOT = Path(__file__).resolve().parents[1]
 UPSTREAM = "git+https://github.com/Shavindra/shacl-py.git@4a90d5b926df53c4cc08303493676e171e292567"
 
 
+def git_options():
+    # Dugite verifies its platform archive against the hash in its locked manifest.
+    package = ROOT / "node_modules/dugite"
+    portable = package / "git"
+    executable = portable / ("ucrt64/bin/git.exe" if os.name == "nt" else "bin/git")
+    if not executable.is_file():
+        subprocess.run(["node", str(package / "script/download-git.js")], check=True)
+
+    options = ["--runtime-hook", str(ROOT / "reader/git_runtime.py")]
+    if os.name == "nt":
+        # The local Git commands used by MetaLad are built into git.exe. Keep its
+        # four non-system DLLs alongside it without changing their signed bytes.
+        for name in (
+            "git.exe",
+            "libiconv-2.dll",
+            "libintl-8.dll",
+            "libpcre2-8-0.dll",
+            "zlib1.dll",
+        ):
+            options.extend(["--add-data", f"{executable.parent / name}:ds-git"])
+        options.extend(
+            [
+                "--add-data",
+                f"{portable / 'LICENSE.txt'}:ds-git",
+                "--add-data",
+                f"{portable / 'ucrt64/share/licenses'}:ds-git/licenses",
+            ]
+        )
+    else:
+        options.extend(["--add-binary", f"{executable}:ds-git"])
+    return options
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -50,6 +83,7 @@ def main():
         "--onefile",
         "--name",
         "ds-reader",
+        *git_options(),
         "--distpath",
         str(build / "dist"),
         "--workpath",

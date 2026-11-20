@@ -8,7 +8,7 @@ DS View uses a shared React and TypeScript interface in Tauri. Its bundled Pytho
 
 Download the build for your platform from the latest successful [desktop build](https://github.com/Shavindra/ds-view/actions/workflows/build.yml). Unzip the downloaded artifact. On macOS (Apple Silicon), open the DMG and drag DS View into Applications. On Windows (x64), run the setup executable. These development builds are unsigned. The Windows installer handles WebView2 when needed.
 
-Choose **Open project folder** to browse the catalogue. The reader and its Python runtime ship with the app. Reading a live MetaLad store also uses Git on the system path. The viewer reads stored dataset and file metadata, shows local availability and never runs `datalad get`. Use **Refresh** to reread the project after changing metadata with the CLI.
+Choose **Open project folder** to browse the catalogue. The app includes Python, DataLad, MetaLad and a private Git executable for reading metadata. It works independently of other DataLad or Git installations. The viewer reads stored dataset and file metadata, shows local availability and never runs `datalad get`. Use **Refresh** to reread the project after changing metadata with the CLI.
 
 ## Development
 
@@ -23,3 +23,5 @@ npm run desktop
 Use `npm run package -- --bundles dmg` on macOS or `npm run package -- --bundles nsis` on Windows. The installer goes in `src-tauri/target/release/bundle/`. The GitHub workflow builds the helper for each platform, tests the shared layout and verifies the reader inside the packaged app against a real MetaLad store.
 
 The record relationships, source grouping, catalogue validation and file selection come from a pinned version of shacl-py. React handles navigation, raw metadata views and file previews. The app bundles IBM Plex Sans, IBM Plex Mono and Source Serif 4 for offline use. The project can customise the header through its existing `.shacl-py/config.yaml`.
+
+The embedded Git build comes from [Dugite Native 2.56.1](https://github.com/desktop/dugite-native/tree/v2.56.1). Its matching sources are [Git](https://github.com/git/git/tree/v2.56.1) and [Git for Windows](https://github.com/git-for-windows/git). The app includes the [Git licence](licenses/git-COPYING.txt).

@@ -3,6 +3,7 @@
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -13,6 +14,16 @@ from datalad.api import create, meta_add
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "tests/fixtures/catalogue"
+
+
+def installed_environment():
+    # Keep Windows system utilities for WebView2, but hide developer toolchains.
+    system = (
+        str(Path(os.environ["SystemRoot"]) / "System32")
+        if os.name == "nt"
+        else "/nonexistent"
+    )
+    return {**os.environ, "PATH": system}
 
 
 class Client:
@@ -26,6 +37,7 @@ class Client:
             stdout=subprocess.PIPE,
             text=True,
             encoding="utf-8",
+            env=installed_environment(),
         )
         return self
 
@@ -113,6 +125,63 @@ class ReaderTests(unittest.TestCase):
     def test_real_metalad_store(self):
         with tempfile.TemporaryDirectory() as work:
             check_store(self.binary, Path(work))
+
+    @unittest.skipIf(
+        os.name == "nt", "Windows installations commonly use unlocked annex pointers"
+    )
+    def test_available_annex_link_and_external_symlink(self):
+        with tempfile.TemporaryDirectory() as work:
+            root = shutil.copytree(FIXTURE, Path(work) / "catalogue")
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            path = root / "paper/raw/readings.csv"
+            body = path.read_bytes()
+            key = f"SHA256E-s{len(body)}--{hashlib.sha256(body).hexdigest()}.csv"
+            obj = root / ".git/annex/objects/XX/YY" / key / key
+            obj.parent.mkdir(parents=True)
+            path.rename(obj)
+            path.symlink_to(os.path.relpath(obj, path.parent))
+            with Client(self.binary) as reader:
+                model = reader.call(op="open", root=str(root))
+                entry = next(
+                    r for r in model["records"] if r["title"] == "Station readings"
+                )
+                params = {
+                    "session": model["session"],
+                    "id": entry["id"],
+                    "folder": ".",
+                    "path": path.name,
+                    "preview": True,
+                }
+                self.assertEqual(
+                    reader.call(op="file", **params)["preview"], body.decode()
+                )
+                path.unlink()
+                external = Path(work) / "unrelated.csv"
+                external.write_bytes(body)
+                path.symlink_to(external)
+                self.assertFalse(reader.call(op="file", **params)["canPreview"])
+
+    def test_unavailable_annex_pointer(self):
+        with tempfile.TemporaryDirectory() as work:
+            root = shutil.copytree(FIXTURE, Path(work) / "catalogue")
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            path = root / "paper/raw/readings.csv"
+            pointer = b"/annex/objects/SHA256E-s5--" + b"0" * 64 + b".csv\n"
+            path.write_bytes(pointer)
+            with Client(self.binary) as reader:
+                model = reader.call(op="open", root=str(root))
+                entry = next(
+                    r for r in model["records"] if r["title"] == "Station readings"
+                )
+                params = {"session": model["session"], "id": entry["id"], "folder": "."}
+                rows = reader.call(op="files", **params)["rows"]
+                self.assertFalse(
+                    next(r for r in rows if r["path"] == path.name)["local"]
+                )
+                detail = reader.call(op="file", path=path.name, preview=True, **params)
+                self.assertFalse(detail["canPreview"])
+                self.assertIsNone(detail["preview"])
+            self.assertEqual(path.read_bytes(), pointer)
 
     def test_catalogue_links_and_selection(self):
         with Client(self.binary) as reader:
