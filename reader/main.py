@@ -10,8 +10,13 @@ from pathlib import Path
 import yaml
 from shacl_py.branding import branding
 from shacl_py.browser import (
-    dataset_keys, file_metadata, file_selection, items_from, neighbours,
-    publication_key, source_content,
+    dataset_keys,
+    file_metadata,
+    file_selection,
+    items_from,
+    neighbours,
+    publication_key,
+    source_content,
 )
 from shacl_py.files import scoped_path
 from shacl_py.native import declared_title
@@ -95,30 +100,63 @@ class Project:
             except ValueError:
                 pass
         return {
-            "id": uid, "title": str(item.label), "kind": item.kind,
-            "section": "Datasets" if item.is_dataset else "Papers" if item.is_publication else "Records",
+            "id": uid,
+            "title": str(item.label),
+            "kind": item.kind,
+            "section": "Datasets"
+            if item.is_dataset
+            else "Papers"
+            if item.is_publication
+            else "Records",
             "pid": field(item, "pid", "@id", "identifier"),
-            "folder": item.folder.relative_to(self.root).as_posix() if item.has_folder else "",
-            "authors": author(item), "primaryAuthor": author(item, primary=True),
+            "folder": item.folder.relative_to(self.root).as_posix()
+            if item.has_folder
+            else "",
+            "authors": author(item),
+            "primaryAuthor": author(item, primary=True),
             "venue": field(item, "venue", "journal", "isPartOf"),
             "year": field(item, "year", "datePublished"),
             "abstract": field(item, "abstract", "description"),
-            "notes": "\n\n".join(filter(None, [field(item, "notes"), *(
-                text(r.get("notes")) for r in reviews if r.get("publication") == item.key
-            )])),
+            "notes": "\n\n".join(
+                filter(
+                    None,
+                    [
+                        field(item, "notes"),
+                        *(
+                            text(r.get("notes"))
+                            for r in reviews
+                            if r.get("publication") == item.key
+                        ),
+                    ],
+                )
+            ),
             "format": field(item, "format", "encodingFormat", "media_type"),
-            "labels": [str(v) for v in (labels if isinstance(labels, list) else [labels])],
+            "labels": [
+                str(v) for v in (labels if isinstance(labels, list) else [labels])
+            ],
             "keywords": field(item, "keywords", "keyword"),
-            "url": url, "urlLabel": raw_url, "links": self.links[uid],
+            "url": url,
+            "urlLabel": raw_url,
+            "links": self.links[uid],
         }
 
     def overview(self):
         brand = branding(self.root)
-        if brand["app_name"] == "shaclpy" and not (self.root / ".shacl-py/config.yaml").is_file():
+        if (
+            brand["app_name"] == "shaclpy"
+            and not (self.root / ".shacl-py/config.yaml").is_file()
+        ):
             brand["app_name"] = "DS View"
-        return {"session": self.token, "name": self.root.name, "root": str(self.root),
-                "brand": brand, "warnings": self.warnings,
-                "records": [self.describe(uid, group) for uid, group in self.groups.items()]}
+        return {
+            "session": self.token,
+            "name": self.root.name,
+            "root": str(self.root),
+            "brand": brand,
+            "warnings": self.warnings,
+            "records": [
+                self.describe(uid, group) for uid, group in self.groups.items()
+            ],
+        }
 
     def _listing(self, uid, directory):
         item = self.groups[uid][0]
@@ -131,7 +169,11 @@ class Project:
                     _, members = self.listing(linked, ".")
                     for name in members:
                         try:
-                            relative = (dataset.folder / name).relative_to(item.folder).as_posix()
+                            relative = (
+                                (dataset.folder / name)
+                                .relative_to(item.folder)
+                                .as_posix()
+                            )
                         except ValueError:
                             continue
                         rows.pop(relative, None)
@@ -158,17 +200,25 @@ class Project:
         if name not in rows:
             raise ValueError("This file is outside the selected record.")
         path = scoped_path(item.folder, name)
-        result = {"metadata": self.stored_files.get(path, []), "preview": None,
-                  "truncated": False, "canPreview": rows[name]["Availability"] == "Available"
-                  and not path.is_symlink() and path.is_file()}
+        result = {
+            "metadata": self.stored_files.get(path, []),
+            "preview": None,
+            "truncated": False,
+            "canPreview": rows[name]["Availability"] == "Available"
+            and not path.is_symlink()
+            and path.is_file(),
+        }
         if preview and result["canPreview"]:
             with path.open("rb") as stream:
                 data = stream.read(8193)
             try:
                 from codecs import getincrementaldecoder
+
                 if b"\x00" in data:
                     raise ValueError("binary")
-                result["preview"] = getincrementaldecoder("utf-8")().decode(data[:8192], final=len(data) <= 8192)
+                result["preview"] = getincrementaldecoder("utf-8")().decode(
+                    data[:8192], final=len(data) <= 8192
+                )
                 result["truncated"] = len(data) > 8192
             except ValueError:
                 result["canPreview"] = False
@@ -184,25 +234,49 @@ class Project:
                 if uid not in self.search_index:
                     item = group[0]
                     _, files = self.listing(uid, ".")
-                    self.search_index[uid] = "\n".join([
-                        json.dumps(item.fields, ensure_ascii=False, default=str),
-                        *files, *(json.dumps(self.stored_files[item.folder / path], ensure_ascii=False, default=str)
-                                 for path in files if item.folder / path in self.stored_files),
-                    ]).casefold()
+                    self.search_index[uid] = "\n".join(
+                        [
+                            json.dumps(item.fields, ensure_ascii=False, default=str),
+                            *files,
+                            *(
+                                json.dumps(
+                                    self.stored_files[item.folder / path],
+                                    ensure_ascii=False,
+                                    default=str,
+                                )
+                                for path in files
+                                if item.folder / path in self.stored_files
+                            ),
+                        ]
+                    ).casefold()
                 if term in self.search_index[uid]:
                     matched.add(uid)
-            return list(matched | {uid for uid, links in self.links.items()
-                                   if any(k in matched and self.groups[k][0].is_dataset for k in links)})
+            return list(
+                matched
+                | {
+                    uid
+                    for uid, links in self.links.items()
+                    if any(k in matched and self.groups[k][0].is_dataset for k in links)
+                }
+            )
         uid = message["id"]
         if uid not in self.groups:
             raise ValueError("Unknown metadata record.")
         if message["op"] == "source":
-            return [{"name": i.ref, "fields": as_yaml(i.fields), "source": as_yaml(source_content(i.source))}
-                    for i in self.groups[uid]]
+            return [
+                {
+                    "name": i.ref,
+                    "fields": as_yaml(i.fields),
+                    "source": as_yaml(source_content(i.source)),
+                }
+                for i in self.groups[uid]
+            ]
         if message["op"] == "files":
             return self.files(uid, message["folder"])
         if message["op"] == "file":
-            return self.file(uid, message["folder"], message["path"], message.get("preview", False))
+            return self.file(
+                uid, message["folder"], message["path"], message.get("preview", False)
+            )
         raise ValueError("Unknown reader operation.")
 
 
@@ -219,7 +293,9 @@ def serve():
             if op == "quit":
                 return
             if op == "open" or op == "refresh":
-                if op == "refresh" and (project is None or message["session"] != project.token):
+                if op == "refresh" and (
+                    project is None or message["session"] != project.token
+                ):
                     raise ValueError("The selected project has changed.")
                 new = Project(message["root"] if op == "open" else project.root)
                 value = new.overview()
@@ -231,10 +307,13 @@ def serve():
             reply = {"value": value}
         except Exception as error:
             reply = {"error": str(error) or type(error).__name__}
-        print(json.dumps(reply, ensure_ascii=True, default=str), file=protocol, flush=True)
+        print(
+            json.dumps(reply, ensure_ascii=True, default=str), file=protocol, flush=True
+        )
 
 
 if __name__ == "__main__":
     from multiprocessing import freeze_support
+
     freeze_support()
     serve()

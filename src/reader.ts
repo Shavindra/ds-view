@@ -13,14 +13,24 @@ export function read<T>(query: Record<string, unknown>) {
 // An older response must never replace a newly selected folder or project.
 export function useQuery<T>(query: Record<string, unknown>) {
   const key = JSON.stringify(query);
-  const [result, setResult] = useState<{key: string; data?: T; error?: string}>();
+  const [result, setResult] = useState<{
+    key: string;
+    data?: T;
+    error?: string;
+  }>();
   useEffect(() => {
     let active = true;
     read<T>(JSON.parse(key)).then(
-      data => { if (active) setResult({key, data}); },
-      error => { if (active) setResult({key, error: String(error)}); }
+      (data) => {
+        if (active) setResult({ key, data });
+      },
+      (error) => {
+        if (active) setResult({ key, error: String(error) });
+      },
     );
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [key]);
   return result?.key === key ? result : undefined;
 }
