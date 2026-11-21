@@ -10,15 +10,21 @@ Download the build for your platform from the latest successful [desktop build](
 
 Choose **Open project folder** to browse the catalogue. The app includes Python, DataLad, MetaLad and a private Git executable for reading metadata. It works independently of other DataLad or Git installations. The viewer reads stored dataset and file metadata, shows local availability and never runs `datalad get`. Use **Refresh** to reread the project after changing metadata with the CLI.
 
-## Development
+## Build from source
 
-Use Node.js 22.12 or later, standard Python 3.14, Git, and the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your platform. Activate a Python virtual environment in the checkout, then run:
+Install Node.js 22.12 or later, Python 3.14, Git and stable Rust with Cargo. On macOS, install the Xcode Command Line Tools with `xcode-select --install` if needed. On Windows, install the Microsoft C++ Build Tools as described in the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
+
+Install Rust with [rustup](https://rustup.rs/), then open a new terminal. If Rust is already installed on macOS, `. "$HOME/.cargo/env"` loads the default rustup installation into the current shell. Check the toolchain and build from the repository root.
 
 ```sh
+rustc --version
+cargo --version
 npm ci
 python scripts/build_reader.py
 npm run desktop
 ```
+
+The script installs its Python dependencies in `.reader-build/venv` inside the checkout. You can run it from an active Conda or Python environment.
 
 Use `npm run package -- --bundles dmg` on macOS or `npm run package -- --bundles nsis` on Windows. The installer goes in `src-tauri/target/release/bundle/`. The GitHub workflow builds the helper for each platform, tests the shared layout and verifies the reader inside the packaged app against a real MetaLad store.
 

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-UPSTREAM = "git+https://github.com/Shavindra/shacl-py.git@4a90d5b926df53c4cc08303493676e171e292567"
+READER_PACKAGE = "shacl-py==0.4.1b1"
 
 
 def git_options():
@@ -17,7 +17,12 @@ def git_options():
     portable = package / "git"
     executable = portable / ("ucrt64/bin/git.exe" if os.name == "nt" else "bin/git")
     if not executable.is_file():
-        subprocess.run(["node", str(package / "script/download-git.js")], check=True)
+        downloader = package / "script/download-git.js"
+        if not downloader.is_file():
+            raise SystemExit(
+                "Run 'npm ci' in the ds-view checkout before building the reader."
+            )
+        subprocess.run(["node", str(downloader)], check=True)
 
     options = ["--runtime-hook", str(ROOT / "reader/git_runtime.py")]
     if os.name == "nt":
@@ -44,46 +49,53 @@ def git_options():
     return options
 
 
+def install_reader(build):
+    env = build / "venv"
+    subprocess.run([sys.executable, "-I", "-m", "venv", str(env)], check=True)
+    python = env / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    pip = [str(python), "-I", "-m", "pip", "install"]
+    subprocess.run([*pip, "-r", str(ROOT / "reader/requirements.txt")], check=True)
+    # Streamlit belongs to the web viewer. The desktop reader uses the dependencies above.
+    subprocess.run([*pip, "--no-deps", READER_PACKAGE], check=True)
+    return python
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--installed",
         action="store_true",
-        help="Use the dependencies already installed in this environment",
+        help="Build with this interpreter and its existing dependencies, skipping installation",
     )
     args = parser.parse_args()
     if sys.version_info[:2] != (3, 14):
         parser.error("Build with Python 3.14.")
-    if not args.installed:
-        subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "pip",
-                "install",
-                "-r",
-                str(ROOT / "reader/requirements.txt"),
-            ],
-            check=True,
+    try:
+        target = subprocess.check_output(
+            ["rustc", "--print", "host-tuple"], stderr=subprocess.PIPE, text=True
+        ).strip()
+    except FileNotFoundError:
+        parser.error(
+            "The Rust compiler (rustc) is missing from PATH. Install stable Rust from "
+            "https://rustup.rs or load your existing toolchain, then check 'rustc --version'."
         )
-        # Install only the reader's dependencies. Streamlit belongs to the web viewer.
-        subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--no-deps", UPSTREAM], check=True
+    except subprocess.CalledProcessError as error:
+        parser.error(
+            f"Could not determine the Rust host target. {error.stderr.strip()}"
         )
-    target = subprocess.check_output(
-        ["rustc", "--print", "host-tuple"], text=True
-    ).strip()
+    git_args = git_options()
     build = ROOT / ".reader-build"
+    python = sys.executable if args.installed else install_reader(build)
     suffix = ".exe" if os.name == "nt" else ""
     cmd = [
-        sys.executable,
+        str(python),
         "-m",
         "PyInstaller",
         "--noconfirm",
         "--onefile",
         "--name",
         "ds-reader",
-        *git_options(),
+        *git_args,
         "--distpath",
         str(build / "dist"),
         "--workpath",

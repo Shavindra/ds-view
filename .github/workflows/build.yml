@@ -31,11 +31,13 @@ jobs:
             artifact: DS-View-macOS-arm64
             bundle: dmg
             engine: webkit
+            reader_python: ./.reader-build/venv/bin/python
           - os: windows-2022
             label: Windows x64
             artifact: DS-View-Windows-x64
             bundle: nsis
             engine: chromium
+            reader_python: ./.reader-build/venv/Scripts/python.exe
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -48,12 +50,18 @@ jobs:
           python-version: '3.14'
       - uses: dtolnay/rust-toolchain@stable
       - run: npm ci
-      - run: python scripts/build_reader.py
-      - run: python -m unittest discover -s tests -p test_reader.py
+      - run: python -m unittest discover -s tests -p test_build_reader.py
+      - name: Build the reader and check that the calling Python environment stays intact
+        shell: bash
+        run: |
+          python -m pip freeze --all > "$RUNNER_TEMP/ds-view-host-packages.txt"
+          python scripts/build_reader.py
+          python -m pip freeze --all | diff -u "$RUNNER_TEMP/ds-view-host-packages.txt" -
+      - run: ${{ matrix.reader_python }} -m unittest discover -s tests -p test_reader.py
       - run: npx playwright install ${{ matrix.engine }}
       - run: npm run test:ui -- --project ${{ matrix.engine }}
       - run: npm run package -- --bundles ${{ matrix.bundle }}
-      - run: python scripts/check_bundle.py
+      - run: ${{ matrix.reader_python }} scripts/check_bundle.py
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
