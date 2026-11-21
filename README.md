@@ -20,14 +20,13 @@ Install Rust with [rustup](https://rustup.rs/), then open a new terminal. If Rus
 rustc --version
 cargo --version
 npm ci
-python scripts/build_reader.py
 npm run desktop
 ```
 
-The script installs its Python dependencies in `.reader-build/venv` inside the checkout. You can run it from an active Conda or Python environment.
+Both `npm run desktop` and `npm run package` fetch the current commit of [shacl-py main](https://github.com/Shavindra/shacl-py/tree/main) and build the reader in `.reader-build/venv`. You can run either command from an active Conda or Python environment. Each build prints the full Git commit, verifies it in the compiled reader and saves it in `.reader-build/shacl-py-commit.txt`. Source builds require access to GitHub. Installed apps use their bundled reader offline.
 
-Use `npm run package -- --bundles dmg` on macOS or `npm run package -- --bundles nsis` on Windows. The installer goes in `src-tauri/target/release/bundle/`. The GitHub workflow builds the helper for each platform, tests the shared layout and verifies the reader inside the packaged app against a real MetaLad store.
+Use `npm run package -- --bundles dmg` on macOS or `npm run package -- --bundles nsis` on Windows. The installer goes in `src-tauri/target/release/bundle/`. GitHub Actions selects one upstream commit for both platforms, links it in the run summary and checks each installed reader against that commit and a real MetaLad store.
 
-The record relationships, source grouping, catalogue validation and file selection come from a pinned version of shacl-py. React handles navigation, raw metadata views and file previews. The app bundles IBM Plex Sans, IBM Plex Mono and Source Serif 4 for offline use. The project can customise the header through its existing `.shacl-py/config.yaml`.
+The record relationships, source grouping, catalogue validation and file selection come from shacl-py. React handles navigation, raw metadata views and file previews. The app bundles IBM Plex Sans, IBM Plex Mono and Source Serif 4 for offline use. The project can customise the header through its existing `.shacl-py/config.yaml`.
 
 The embedded Git build comes from [Dugite Native 2.56.1](https://github.com/desktop/dugite-native/tree/v2.56.1). Its matching sources are [Git](https://github.com/git/git/tree/v2.56.1) and [Git for Windows](https://github.com/git-for-windows/git). The app includes the [Git licence](licenses/git-COPYING.txt).

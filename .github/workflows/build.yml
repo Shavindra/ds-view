@@ -20,8 +20,27 @@ permissions:
   contents: read
 
 jobs:
+  upstream:
+    name: Resolve shacl-py main
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.reader.outputs.commit }}
+    steps:
+      - id: reader
+        uses: actions/checkout@v4
+        with:
+          repository: Shavindra/shacl-py
+          ref: main
+          persist-credentials: false
+      - name: Record the reader revision
+        env:
+          REVISION: ${{ steps.reader.outputs.commit }}
+        run: echo "[shacl-py commit $REVISION](https://github.com/Shavindra/shacl-py/commit/$REVISION)" >> "$GITHUB_STEP_SUMMARY"
   desktop:
     name: ${{ matrix.label }}
+    needs: upstream
+    env:
+      DS_VIEW_CI_SHACL_PY_COMMIT: ${{ needs.upstream.outputs.commit }}
     strategy:
       fail-fast: false
       matrix:
@@ -51,16 +70,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: npm ci
       - run: python -m unittest discover -s tests -p test_build_reader.py
-      - name: Build the reader and check that the calling Python environment stays intact
+      - name: Build the installer and check that the calling Python environment stays intact
         shell: bash
         run: |
           python -m pip freeze --all > "$RUNNER_TEMP/ds-view-host-packages.txt"
-          python scripts/build_reader.py
+          npm run package -- --bundles ${{ matrix.bundle }}
           python -m pip freeze --all | diff -u "$RUNNER_TEMP/ds-view-host-packages.txt" -
       - run: ${{ matrix.reader_python }} -m unittest discover -s tests -p test_reader.py
       - run: npx playwright install ${{ matrix.engine }}
       - run: npm run test:ui -- --project ${{ matrix.engine }}
-      - run: npm run package -- --bundles ${{ matrix.bundle }}
       - run: ${{ matrix.reader_python }} scripts/check_bundle.py
       - uses: actions/upload-artifact@v4
         with:

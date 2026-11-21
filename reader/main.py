@@ -332,4 +332,9 @@ if __name__ == "__main__":
     from multiprocessing import freeze_support
 
     freeze_support()
-    serve()
+    if sys.argv[1:] == ["--shacl-py-commit"]:
+        from shacl_revision import installed_commit
+
+        print(installed_commit())
+    else:
+        serve()

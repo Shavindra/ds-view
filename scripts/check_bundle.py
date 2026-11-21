@@ -18,6 +18,20 @@ from test_reader import check_store, installed_environment
 def smoke(install, tmp):
     win = os.name == "nt"
     helper = next(install.rglob("ds-reader.exe" if win else "ds-reader"))
+    expected = (
+        os.environ.get("DS_VIEW_CI_SHACL_PY_COMMIT")
+        or (ROOT / ".reader-build/shacl-py-commit.txt")
+        .read_text(encoding="ascii")
+        .strip()
+    )
+    actual = subprocess.check_output(
+        [str(helper), "--shacl-py-commit"], text=True, env=installed_environment()
+    ).strip()
+    if actual != expected:
+        raise RuntimeError(
+            f"Installed shacl-py commit {actual!r} differs from {expected}."
+        )
+    print(f"Verified installed shacl-py commit {actual}")
     check_store(helper, tmp)
     if win:
         app = next(

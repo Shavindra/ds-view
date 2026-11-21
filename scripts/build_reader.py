@@ -1,14 +1,39 @@
-"""Install the pinned reader and build the native Tauri sidecar on this host."""
+"""Build the native Tauri sidecar from the current shacl-py main commit."""
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-READER_PACKAGE = "shacl-py==0.4.1b1"
+READER_REPO = "https://github.com/Shavindra/shacl-py.git"
+
+
+def main_commit():
+    # A single checkout selects the same upstream revision for both CI runners.
+    commit = os.environ.get("DS_VIEW_CI_SHACL_PY_COMMIT")
+    if commit is None:
+        try:
+            ref = subprocess.check_output(
+                ["git", "ls-remote", "--exit-code", READER_REPO, "refs/heads/main"],
+                text=True,
+                stderr=subprocess.PIPE,
+            )
+        except FileNotFoundError:
+            raise SystemExit("Install Git to fetch shacl-py/main.") from None
+        except subprocess.CalledProcessError as error:
+            raise SystemExit(
+                f"Could not fetch shacl-py/main. {error.stderr.strip()}"
+            ) from None
+        commit, _, name = ref.strip().partition("\t")
+        if name != "refs/heads/main":
+            raise SystemExit("Git did not return refs/heads/main for shacl-py.")
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise SystemExit("Expected a full Git commit for shacl-py/main.")
+    return commit
 
 
 def git_options():
@@ -49,14 +74,35 @@ def git_options():
     return options
 
 
-def install_reader(build):
+def reader_python(build, commit, *, installed_only):
     env = build / "venv"
-    subprocess.run([sys.executable, "-I", "-m", "venv", str(env)], check=True)
-    python = env / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    python = (
+        Path(sys.executable)
+        if installed_only
+        else env / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    )
     pip = [str(python), "-I", "-m", "pip", "install"]
-    subprocess.run([*pip, "-r", str(ROOT / "reader/requirements.txt")], check=True)
-    # Streamlit belongs to the web viewer. The desktop reader uses the dependencies above.
-    subprocess.run([*pip, "--no-deps", READER_PACKAGE], check=True)
+    if not installed_only:
+        subprocess.run([sys.executable, "-I", "-m", "venv", str(env)], check=True)
+        subprocess.run([*pip, "-r", str(ROOT / "reader/requirements.txt")], check=True)
+    installed = subprocess.check_output(
+        [str(python), "-I", str(ROOT / "reader/shacl_revision.py")], text=True
+    ).strip()
+    if installed != commit:
+        if installed_only:
+            raise SystemExit(
+                f"This interpreter does not have shacl-py commit {commit}. Rerun without --installed to use the project's build environment."
+            )
+        # Two upstream commits can declare the same package version.
+        subprocess.run(
+            [
+                *pip,
+                "--no-deps",
+                "--force-reinstall",
+                f"shacl-py @ git+{READER_REPO}@{commit}",
+            ],
+            check=True,
+        )
     return python
 
 
@@ -65,7 +111,7 @@ def main():
     parser.add_argument(
         "--installed",
         action="store_true",
-        help="Build with this interpreter and its existing dependencies, skipping installation",
+        help="Use this interpreter's dependencies if its shacl-py commit matches main",
     )
     args = parser.parse_args()
     if sys.version_info[:2] != (3, 14):
@@ -83,9 +129,12 @@ def main():
         parser.error(
             f"Could not determine the Rust host target. {error.stderr.strip()}"
         )
+    commit = main_commit()
+    print(f"Building with shacl-py/main at {commit}", flush=True)
     git_args = git_options()
     build = ROOT / ".reader-build"
-    python = sys.executable if args.installed else install_reader(build)
+    python = reader_python(build, commit, installed_only=args.installed)
+    stamp = build / "shacl-py-commit.txt"
     suffix = ".exe" if os.name == "nt" else ""
     cmd = [
         str(python),
@@ -122,13 +171,24 @@ def main():
         "streamlit",
         "--exclude-module",
         "pytest",
-        str(ROOT / "reader/main.py"),
     ]
+    if not stamp.is_file() or stamp.read_text(encoding="ascii").strip() != commit:
+        cmd.append("--clean")
+    cmd.append(str(ROOT / "reader/main.py"))
     subprocess.run(cmd, check=True)
+    frozen = build / "dist" / f"ds-reader{suffix}"
+    actual = subprocess.check_output(
+        [str(frozen), "--shacl-py-commit"], text=True
+    ).strip()
+    if actual != commit:
+        raise SystemExit(
+            f"The reader reports shacl-py commit {actual!r}. Expected {commit}."
+        )
     dest = ROOT / "src-tauri/binaries" / f"ds-reader-{target}{suffix}"
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(build / "dist" / f"ds-reader{suffix}", dest)
-    print(dest)
+    shutil.copy2(frozen, dest)
+    stamp.write_text(commit + "\n", encoding="ascii")
+    print(f"Bundled shacl-py {actual} in {dest}")
 
 
 if __name__ == "__main__":
