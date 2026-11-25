@@ -113,15 +113,29 @@ test("the desktop shell opens the bundled shacl-py catalogue", async ({
       .locator(".study header")
       .getByRole("link", { name: "Graph" })
       .click();
-    await expect(
-      catalogue.getByRole("group", {
-        name: "Network of papers, datasets and labels",
-      }),
-    ).toBeVisible();
+    // The frozen runtime loads the graph component on its first visit.
+    const graph = catalogue.getByRole("group", {
+      name: "Network of papers, datasets and labels",
+    });
+    await expect(graph.locator("a.node").first()).toBeVisible({
+      timeout: 45000,
+    });
     await page.getByRole("button", { name: "Open project folder" }).click(); // cancel
     await expect(
       catalogue.getByRole("heading", { name: "Network graph" }),
     ).toBeVisible();
+  } catch (error) {
+    const frame = page
+      .frames()
+      .find((candidate) => candidate !== page.mainFrame());
+    if (frame)
+      console.error(
+        await frame
+          .locator("body")
+          .innerText({ timeout: 3000 })
+          .catch(() => "Viewer disconnected"),
+      );
+    throw error;
   } finally {
     viewer?.stdin.end();
     await exit;
