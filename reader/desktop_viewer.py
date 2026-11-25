@@ -1,6 +1,8 @@
 """Serve the installed shacl-py viewer for one native window selection."""
 
 import asyncio
+import faulthandler
+import importlib
 import json
 import os
 import secrets
@@ -11,12 +13,18 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 
-async def serve_project(root, protocol):
+async def serve_project(root, protocol, control_fd):
     import streamlit as st
     import uvicorn
     from shacl_py.branding import branding
     from starlette.middleware import Middleware
     from starlette.middleware.base import BaseHTTPMiddleware
+
+    # Streamlit checks graph payloads with these native libraries. Initialise them
+    # on the Windows main thread before any Streamlit script threads start.
+    if sys.platform == "win32":
+        importlib.import_module("pandas")
+        importlib.import_module("pyarrow")
 
     theme = branding(root)
     token = secrets.token_hex(24)
@@ -82,7 +90,8 @@ async def serve_project(root, protocol):
 
         def watch_parent():
             # EOF also closes the viewer after a desktop crash.
-            sys.stdin.buffer.read(1)
+            with os.fdopen(control_fd, "rb", buffering=0) as control:
+                control.read(1)
             loop.call_soon_threadsafe(setattr, server, "should_exit", True)
 
         threading.Thread(target=watch_parent, daemon=True).start()
@@ -98,7 +107,14 @@ def run(path):
         os.environ["SHACL_PY_ROOT"] = str(root)
         os.environ["SHACL_PY_METALAD"] = "0"
         os.chdir(Path(__file__).resolve().parent)
-        asyncio.run(serve_project(root, protocol))
+        # A blocking read holds the Windows CRT descriptor lock. Give the
+        # lifetime pipe its own descriptor and leave stdin free for libraries.
+        control_fd = os.dup(sys.stdin.fileno())
+        with open(os.devnull, "rb") as empty:
+            os.dup2(empty.fileno(), sys.stdin.fileno())
+        if os.environ.get("DS_VIEW_DEBUG_STACKS") == "1":
+            faulthandler.dump_traceback_later(30, repeat=True)
+        asyncio.run(serve_project(root, protocol, control_fd))
     except Exception as error:
         print(json.dumps({"error": str(error)}), file=protocol, flush=True)
         raise

@@ -35,7 +35,9 @@ test("the desktop shell opens the bundled shacl-py catalogue", async ({
         if (command !== "open_project")
           throw new Error(`Unknown command ${command}`);
         if (args.initial || viewer) return null;
-        viewer = spawn(resolve("src-tauri/binaries", bin), ["--view", root]);
+        viewer = spawn(resolve("src-tauri/binaries", bin), ["--view", root], {
+          env: { ...process.env, DS_VIEW_DEBUG_STACKS: "1" },
+        });
         viewer.stderr.on("data", (part) => process.stderr.write(part));
         exit = once(viewer, "exit");
         const output = createInterface({ input: viewer.stdout });
