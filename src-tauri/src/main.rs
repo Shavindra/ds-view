@@ -1,143 +1,92 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
 
-struct Reader {
-    process: Child,
-    input: ChildStdin,
-    output: BufReader<ChildStdout>,
+#[derive(Deserialize, Serialize)]
+struct Project {
+    name: String,
+    title: String,
+    url: String,
 }
 
-impl Reader {
-    fn start() -> Result<Self, String> {
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Ready {
+    Project(Project),
+    Error { error: String },
+}
+
+struct Viewer(Child);
+
+impl Viewer {
+    fn open(root: PathBuf) -> Result<(Self, Project), String> {
         let path = std::env::current_exe()
-            .map_err(|error| error.to_string())?
+            .map_err(|e| e.to_string())?
             .with_file_name(format!("ds-reader{}", std::env::consts::EXE_SUFFIX));
-        let mut command = Command::new(&path);
+        let mut command = Command::new(path);
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
             command.creation_flags(0x08000000); // CREATE_NO_WINDOW
         }
-        let mut process = command
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .map_err(|error| {
-                format!(
-                    "Could not start the metadata reader at {}: {error}",
-                    path.display()
-                )
-            })?;
-        let input = process.stdin.take().expect("piped stdin");
-        let output = BufReader::new(process.stdout.take().expect("piped stdout"));
-        Ok(Self {
-            process,
-            input,
-            output,
-        })
-    }
-
-    fn exchange(&mut self, message: &Value) -> Result<Value, String> {
-        writeln!(self.input, "{message}")
-            .and_then(|_| self.input.flush())
-            .map_err(|e| e.to_string())?;
+        let mut viewer = Self(
+            command
+                .arg("--view")
+                .arg(root)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::inherit())
+                .spawn()
+                .map_err(|e| format!("Could not start the catalogue viewer: {e}"))?,
+        );
         let mut line = String::new();
-        if self
-            .output
+        let output = viewer.0.stdout.take().expect("piped stdout");
+        if BufReader::new(output)
             .read_line(&mut line)
             .map_err(|e| e.to_string())?
             == 0
         {
-            return Err("The metadata reader stopped. Reopen the project to retry.".to_owned());
+            return Err("The catalogue viewer stopped before opening the project.".into());
         }
-        serde_json::from_str(&line)
-            .map_err(|e| format!("Invalid response from the metadata reader: {e}"))
+        match serde_json::from_str(&line).map_err(|e| format!("Invalid viewer response: {e}"))? {
+            Ready::Project(project) => Ok((viewer, project)),
+            Ready::Error { error } => Err(error),
+        }
     }
 }
 
-impl Drop for Reader {
+impl Drop for Viewer {
     fn drop(&mut self) {
-        // EOF lets the bundled Python runtime clean up its temporary directory.
-        let _ = self.input.write_all(b"{\"op\":\"quit\"}\n");
-        let _ = self.input.flush();
-        let _ = self.process.wait();
+        // EOF asks the viewer to close its sockets and clean up its frozen runtime.
+        drop(self.0.stdin.take());
+        let deadline = Instant::now() + Duration::from_secs(8);
+        while Instant::now() < deadline {
+            match self.0.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) => std::thread::sleep(Duration::from_millis(50)),
+                Err(_) => break,
+            }
+        }
+        let _ = self.0.kill();
+        let _ = self.0.wait();
     }
 }
 
 #[derive(Default)]
-struct Backend(Mutex<Option<Reader>>);
-
-fn request(app: &AppHandle, message: Value) -> Result<Value, String> {
-    let backend = app.state::<Backend>();
-    let mut slot = backend.0.lock().map_err(|_| "Reader lock unavailable")?;
-    if slot.is_none() {
-        *slot = Some(Reader::start()?);
-    }
-    let response = match slot.as_mut().expect("initialised").exchange(&message) {
-        Ok(response) => response,
-        Err(error) => {
-            slot.take();
-            return Err(error);
-        }
-    };
-    if let Some(error) = response.get("error").and_then(Value::as_str) {
-        return Err(error.to_owned());
-    }
-    response
-        .get("value")
-        .cloned()
-        .ok_or_else(|| "Missing reader response".to_owned())
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(tag = "op", rename_all = "snake_case")]
-enum Query {
-    Search {
-        session: String,
-        term: String,
-    },
-    Refresh {
-        session: String,
-    },
-    Files {
-        session: String,
-        id: String,
-        folder: String,
-    },
-    File {
-        session: String,
-        id: String,
-        folder: String,
-        path: String,
-        preview: bool,
-    },
-    Source {
-        session: String,
-        id: String,
-    },
-}
-
-#[tauri::command]
-async fn read_project(app: AppHandle, query: Query) -> Result<Value, String> {
-    tauri::async_runtime::spawn_blocking(move || request(&app, json!(query)))
-        .await
-        .map_err(|e| e.to_string())?
-}
+struct CurrentViewer(Mutex<Option<Viewer>>);
 
 #[derive(Default)]
 struct InitialFolder(Mutex<Option<PathBuf>>);
 
 #[tauri::command]
-async fn open_project(app: AppHandle, initial: bool) -> Result<Option<Value>, String> {
+async fn open_project(app: AppHandle, initial: bool) -> Result<Option<Project>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let path = if initial {
             app.state::<InitialFolder>()
@@ -153,8 +102,17 @@ async fn open_project(app: AppHandle, initial: bool) -> Result<Option<Value>, St
                 .map(|path| path.into_path().map_err(|e| e.to_string()))
                 .transpose()?
         };
-        path.map(|root| request(&app, json!({"op":"open","root":root})))
-            .transpose()
+        let Some(root) = path else { return Ok(None) };
+        // Keep the open project usable when the picker is cancelled or the new viewer fails.
+        let (viewer, project) = Viewer::open(root)?;
+        let previous = app
+            .state::<CurrentViewer>()
+            .0
+            .lock()
+            .map_err(|_| "Viewer lock unavailable")?
+            .replace(viewer);
+        drop(previous);
+        Ok(Some(project))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -166,17 +124,17 @@ fn main() {
         .map(PathBuf::from)
         .filter(|p| p.is_dir());
     let app = tauri::Builder::default()
-        .manage(Backend::default())
+        .manage(CurrentViewer::default())
         .manage(InitialFolder(Mutex::new(initial)))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![open_project, read_project])
+        .invoke_handler(tauri::generate_handler![open_project])
         .build(tauri::generate_context!())
         .expect("could not start DS View");
     app.run(|app, event| {
         if let tauri::RunEvent::Exit = event {
-            if let Ok(mut reader) = app.state::<Backend>().0.lock() {
-                reader.take();
+            if let Ok(mut viewer) = app.state::<CurrentViewer>().0.lock() {
+                viewer.take();
             }
         }
     });

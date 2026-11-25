@@ -336,5 +336,9 @@ if __name__ == "__main__":
         from shacl_revision import installed_commit
 
         print(installed_commit())
+    elif len(sys.argv) == 3 and sys.argv[1] == "--view":
+        from desktop_viewer import run
+
+        run(sys.argv[2])
     else:
         serve()

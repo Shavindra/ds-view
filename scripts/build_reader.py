@@ -1,6 +1,7 @@
 """Build the native Tauri sidecar from the current shacl-py main commit."""
 
 import argparse
+import base64
 import os
 import re
 import shutil
@@ -74,6 +75,34 @@ def git_options():
     return options
 
 
+def desktop_assets(build):
+    rules = []
+    for package, family, weights in (
+        ("ibm-plex-sans", "IBM Plex Sans", (400, 500, 600)),
+        ("ibm-plex-mono", "IBM Plex Mono", (400,)),
+        ("source-serif-4", "Source Serif 4", (500, 600)),
+    ):
+        fonts = ROOT / "node_modules/@fontsource" / package / "files"
+        for weight in weights:
+            data = (fonts / f"{package}-latin-{weight}-normal.woff2").read_bytes()
+            encoded = base64.b64encode(data).decode("ascii")
+            rules.append(
+                f"@font-face {{font-family:'{family}';font-weight:{weight};"
+                f"font-style:normal;src:url(data:font/woff2;base64,{encoded}) format('woff2');}}"
+            )
+    css = build / "desktop-fonts.css"
+    css.write_text("\n".join(rules), encoding="ascii")
+    return [
+        arg
+        for path in (
+            css,
+            ROOT / "reader/desktop_app.py",
+            ROOT / "reader/desktop_controls.js",
+        )
+        for arg in ("--add-data", f"{path}:.")
+    ]
+
+
 def reader_python(build, commit, *, installed_only):
     env = build / "venv"
     python = (
@@ -145,6 +174,7 @@ def main():
         "--name",
         "ds-reader",
         *git_args,
+        *desktop_assets(build),
         "--distpath",
         str(build / "dist"),
         "--workpath",
@@ -167,8 +197,14 @@ def main():
         "dataladmetadatamodel",
         "--copy-metadata",
         "datalad-deprecated",
-        "--exclude-module",
+        "--collect-data",
         "streamlit",
+        "--collect-submodules",
+        "streamlit",
+        "--recursive-copy-metadata",
+        "streamlit",
+        "--hidden-import",
+        "shacl_py.app",
         "--exclude-module",
         "pytest",
     ]

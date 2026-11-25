@@ -7,6 +7,11 @@ catalogue:
       title: Shoreline survey
       description: Measurements at two field stations.
       local_folder: paper
+      bibliography: {file: references.json, key: shoreline}
+      figures:
+        - label: Fig. 1
+          title: Station comparison
+          related_datasets: ['urn:example:means']
       dataset_links:
         - {dataset: 'urn:example:readings', role: describes}
         - {dataset: 'urn:example:means', role: reuses}
@@ -14,6 +19,10 @@ catalogue:
       title: Second survey
       dataset_links:
         - {dataset: 'urn:example:readings', role: reuses}
+    - pid: urn:example:bibliography-only
+      title: Tidal cycles
+      source_url: https://example.org/tides
+      bibliography: {file: references.json, key: tides}
   datasets:
     - pid: urn:example:readings
       title: Station readings
